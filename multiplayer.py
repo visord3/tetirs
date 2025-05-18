@@ -2,6 +2,7 @@
 import sys
 import pygame
 import random
+import os
 
 # Import from the updated single_player module
 from single_player import COLORS, SHAPES, CELL_SIZE, LEVEL_SPEED
@@ -67,6 +68,8 @@ class Block:
         if not self.is_valid_position(grid):
             # Restore original shape if rotation causes collision
             self.shape = original_shape
+            return False
+        return True
 
     def is_valid_position(self, grid):
         for y, row in enumerate(self.shape):
@@ -280,6 +283,26 @@ def multiplayer_mode():
         controller.init()
         print(f"Controller connected: {controller.get_name()}")
 
+    # Initialize sounds
+    try:
+        pygame.mixer.music.load("assets/music/game_music.mp3")
+        rotate_sound = pygame.mixer.Sound("assets/sounds/rotate.wav")
+        clear_sound = pygame.mixer.Sound("assets/sounds/clear.wav")
+        drop_sound = pygame.mixer.Sound("assets/sounds/drop.wav")
+        game_over_sound = pygame.mixer.Sound("assets/sounds/game_over.wav")
+        
+        # Start the background music
+        pygame.mixer.music.play(-1)  # -1 for infinite loop
+    except:
+        print("Could not load sound files. Making sure they exist in assets/music and assets/sounds.")
+        # Create dummy sound objects to avoid errors
+        class DummySound:
+            def play(self): pass
+        rotate_sound = DummySound()
+        clear_sound = DummySound()
+        drop_sound = DummySound()
+        game_over_sound = DummySound()
+
     clock = pygame.time.Clock()
     running = True
 
@@ -294,6 +317,10 @@ def multiplayer_mode():
     level_p1 = 1
     level_p2 = 1
 
+    # Player status
+    p1_active = True
+    p2_active = True
+
     # Game duration in seconds
     timer = 120  # 2 minutes
     start_ticks = pygame.time.get_ticks()
@@ -301,6 +328,15 @@ def multiplayer_mode():
     # Spawn initial blocks for both players
     block_p1 = spawn_block(player1_grid.grid)
     block_p2 = spawn_block(player2_grid.grid)
+
+    # Check if initial blocks can be placed - if not, game over
+    if not block_p1.is_valid_position(player1_grid.grid):
+        p1_active = False
+        block_p1 = None
+    
+    if not block_p2.is_valid_position(player2_grid.grid):
+        p2_active = False
+        block_p2 = None
 
     # Fall speeds and last drop times for each player
     fall_speed_p1 = adjust_fall_speed(total_lines_p1)  # ms
@@ -328,26 +364,31 @@ def multiplayer_mode():
         elapsed_time = (now - start_ticks) // 1000
         remaining_time = max(0, timer - elapsed_time)
 
-        if remaining_time <= 0 and running:
+        # Check if game is over
+        if remaining_time <= 0 or (not p1_active and not p2_active):
             running = False
+            # Play game over sound
+            game_over_sound.play()
             break
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                pygame.mixer.music.stop()
                 pygame.quit()
                 sys.exit()
 
             # ESC to return to main menu
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                pygame.mixer.music.stop()
                 return
 
             ###############
             # Keyboard Controls
             ###############
             if event.type == pygame.KEYDOWN:
-                # Player 1 Controls
-                if block_p1:
+                # Player 1 Controls (only if active)
+                if p1_active and block_p1:
                     if event.key == pygame.K_LEFT:
                         p1_left_pressed = True
                         p1_right_pressed = False
@@ -370,30 +411,44 @@ def multiplayer_mode():
                             player1_grid.place_block(block_p1)
                             lines_cleared = player1_grid.clear_rows()
                             if lines_cleared:
+                                clear_sound.play()
                                 total_lines_p1 += lines_cleared
                                 level_p1 = min(10, total_lines_p1 // 10 + 1)
                                 score_p1 += get_line_clear_score(lines_cleared, level_p1)
                                 fall_speed_p1 = adjust_fall_speed(total_lines_p1)
 
                             block_p1 = spawn_block(player1_grid.grid)
+                            # Check if new block can be placed
+                            if not block_p1.is_valid_position(player1_grid.grid):
+                                p1_active = False
+                                block_p1 = None
+                                game_over_sound.play()
                         p1_move_time = now
                     elif event.key == pygame.K_UP:
-                        block_p1.rotate(player1_grid.grid)
+                        if block_p1.rotate(player1_grid.grid):
+                            rotate_sound.play()
                     elif event.key == pygame.K_SPACE:  # Hard drop
                         while block_p1.is_valid_position(player1_grid.grid):
                             block_p1.row_offset += 1
                         block_p1.row_offset -= 1
                         player1_grid.place_block(block_p1)
+                        drop_sound.play()
                         lines_cleared = player1_grid.clear_rows()
                         if lines_cleared:
+                            clear_sound.play()
                             total_lines_p1 += lines_cleared
                             level_p1 = min(10, total_lines_p1 // 10 + 1)
                             score_p1 += get_line_clear_score(lines_cleared, level_p1)
                             fall_speed_p1 = adjust_fall_speed(total_lines_p1)
                         block_p1 = spawn_block(player1_grid.grid)
+                        # Check if new block can be placed
+                        if not block_p1.is_valid_position(player1_grid.grid):
+                            p1_active = False
+                            block_p1 = None
+                            game_over_sound.play()
 
-                # Player 2 Controls
-                if block_p2:
+                # Player 2 Controls (only if active)
+                if p2_active and block_p2:
                     if event.key == pygame.K_a:
                         p2_left_pressed = True
                         p2_right_pressed = False
@@ -416,26 +471,40 @@ def multiplayer_mode():
                             player2_grid.place_block(block_p2)
                             lines_cleared = player2_grid.clear_rows()
                             if lines_cleared:
+                                clear_sound.play()
                                 total_lines_p2 += lines_cleared
                                 level_p2 = min(10, total_lines_p2 // 10 + 1)
                                 score_p2 += get_line_clear_score(lines_cleared, level_p2)
                                 fall_speed_p2 = adjust_fall_speed(total_lines_p2)
                             block_p2 = spawn_block(player2_grid.grid)
+                            # Check if new block can be placed
+                            if not block_p2.is_valid_position(player2_grid.grid):
+                                p2_active = False
+                                block_p2 = None
+                                game_over_sound.play()
                         p2_move_time = now
                     elif event.key == pygame.K_w:
-                        block_p2.rotate(player2_grid.grid)
+                        if block_p2.rotate(player2_grid.grid):
+                            rotate_sound.play()
                     elif event.key == pygame.K_f:  # Hard drop for P2
                         while block_p2.is_valid_position(player2_grid.grid):
                             block_p2.row_offset += 1
                         block_p2.row_offset -= 1
                         player2_grid.place_block(block_p2)
+                        drop_sound.play()
                         lines_cleared = player2_grid.clear_rows()
                         if lines_cleared:
+                            clear_sound.play()
                             total_lines_p2 += lines_cleared
                             level_p2 = min(10, total_lines_p2 // 10 + 1)
                             score_p2 += get_line_clear_score(lines_cleared, level_p2)
                             fall_speed_p2 = adjust_fall_speed(total_lines_p2)
                         block_p2 = spawn_block(player2_grid.grid)
+                        # Check if new block can be placed
+                        if not block_p2.is_valid_position(player2_grid.grid):
+                            p2_active = False
+                            block_p2 = None
+                            game_over_sound.play()
 
             elif event.type == pygame.KEYUP:
                 if event.key == pygame.K_LEFT:
@@ -454,9 +523,9 @@ def multiplayer_mode():
             ###############
             # Controller Controls (only for Player 1 if using split screen)
             ###############
-            if controller:
+            if controller and p1_active and block_p1:
                 # D-pad for Player 1
-                if event.type == pygame.JOYHATMOTION and block_p1:
+                if event.type == pygame.JOYHATMOTION:
                     hat_x, hat_y = controller.get_hat(0)
 
                     p1_left_pressed = (hat_x == -1)
@@ -483,15 +552,21 @@ def multiplayer_mode():
                             player1_grid.place_block(block_p1)
                             lines_cleared = player1_grid.clear_rows()
                             if lines_cleared:
+                                clear_sound.play()
                                 total_lines_p1 += lines_cleared
                                 level_p1 = min(10, total_lines_p1 // 10 + 1)
                                 score_p1 += get_line_clear_score(lines_cleared, level_p1)
                                 fall_speed_p1 = adjust_fall_speed(total_lines_p1)
                             block_p1 = spawn_block(player1_grid.grid)
+                            # Check if new block can be placed
+                            if not block_p1.is_valid_position(player1_grid.grid):
+                                p1_active = False
+                                block_p1 = None
+                                game_over_sound.play()
                         p1_move_time = now
 
                 # Analog stick for Player 1
-                if event.type == pygame.JOYAXISMOTION and block_p1:
+                if event.type == pygame.JOYAXISMOTION:
                     left_stick_x = controller.get_axis(0)
                     left_stick_y = controller.get_axis(1)
                     deadzone = 0.5
@@ -529,20 +604,27 @@ def multiplayer_mode():
                                 player1_grid.place_block(block_p1)
                                 lines_cleared = player1_grid.clear_rows()
                                 if lines_cleared:
+                                    clear_sound.play()
                                     total_lines_p1 += lines_cleared
                                     level_p1 = min(10, total_lines_p1 // 10 + 1)
                                     score_p1 += get_line_clear_score(lines_cleared, level_p1)
                                     fall_speed_p1 = adjust_fall_speed(total_lines_p1)
                                 block_p1 = spawn_block(player1_grid.grid)
+                                # Check if new block can be placed
+                                if not block_p1.is_valid_position(player1_grid.grid):
+                                    p1_active = False
+                                    block_p1 = None
+                                    game_over_sound.play()
                             p1_move_time = now
                     else:
                         p1_down_pressed = False
 
                 # Button presses for Player 1
-                if event.type == pygame.JOYBUTTONDOWN and block_p1:
+                if event.type == pygame.JOYBUTTONDOWN:
                     # Triangle (3) to rotate
                     if controller.get_button(3):
-                        block_p1.rotate(player1_grid.grid)
+                        if block_p1.rotate(player1_grid.grid):
+                            rotate_sound.play()
 
                     # X button (0) for hard drop
                     elif controller.get_button(0):
@@ -550,19 +632,26 @@ def multiplayer_mode():
                             block_p1.row_offset += 1
                         block_p1.row_offset -= 1
                         player1_grid.place_block(block_p1)
+                        drop_sound.play()
                         lines_cleared = player1_grid.clear_rows()
                         if lines_cleared:
+                            clear_sound.play()
                             total_lines_p1 += lines_cleared
                             level_p1 = min(10, total_lines_p1 // 10 + 1)
                             score_p1 += get_line_clear_score(lines_cleared, level_p1)
                             fall_speed_p1 = adjust_fall_speed(total_lines_p1)
                         block_p1 = spawn_block(player1_grid.grid)
+                        # Check if new block can be placed
+                        if not block_p1.is_valid_position(player1_grid.grid):
+                            p1_active = False
+                            block_p1 = None
+                            game_over_sound.play()
 
         ######################
         # Handle continuous movement when directions are held
         ######################
-        # Player 1
-        if block_p1 and now - p1_move_time > move_delay:
+        # Player 1 (only if active)
+        if p1_active and block_p1 and now - p1_move_time > move_delay:
             if p1_left_pressed:
                 block_p1.col_offset -= 1
                 if not block_p1.is_valid_position(player1_grid.grid):
@@ -582,16 +671,22 @@ def multiplayer_mode():
                     player1_grid.place_block(block_p1)
                     lines_cleared = player1_grid.clear_rows()
                     if lines_cleared:
+                        clear_sound.play()
                         total_lines_p1 += lines_cleared
                         level_p1 = min(10, total_lines_p1 // 10 + 1)
                         score_p1 += get_line_clear_score(lines_cleared, level_p1)
                         fall_speed_p1 = adjust_fall_speed(total_lines_p1)
                     block_p1 = spawn_block(player1_grid.grid)
+                    # Check if new block can be placed
+                    if not block_p1.is_valid_position(player1_grid.grid):
+                        p1_active = False
+                        block_p1 = None
+                        game_over_sound.play()
                 else:
                     p1_move_time = now
 
-        # Player 2
-        if block_p2 and now - p2_move_time > move_delay:
+        # Player 2 (only if active)
+        if p2_active and block_p2 and now - p2_move_time > move_delay:
             if p2_left_pressed:
                 block_p2.col_offset -= 1
                 if not block_p2.is_valid_position(player2_grid.grid):
@@ -611,46 +706,64 @@ def multiplayer_mode():
                     player2_grid.place_block(block_p2)
                     lines_cleared = player2_grid.clear_rows()
                     if lines_cleared:
+                        clear_sound.play()
                         total_lines_p2 += lines_cleared
                         level_p2 = min(10, total_lines_p2 // 10 + 1)
                         score_p2 += get_line_clear_score(lines_cleared, level_p2)
                         fall_speed_p2 = adjust_fall_speed(total_lines_p2)
                     block_p2 = spawn_block(player2_grid.grid)
+                    # Check if new block can be placed
+                    if not block_p2.is_valid_position(player2_grid.grid):
+                        p2_active = False
+                        block_p2 = None
+                        game_over_sound.play()
                 else:
                     p2_move_time = now
 
         ######################
-        # Timed auto-drop for P1
+        # Timed auto-drop for P1 (only if active)
         ######################
-        if block_p1 and (now - last_drop_time_p1 >= fall_speed_p1):
+        if p1_active and block_p1 and (now - last_drop_time_p1 >= fall_speed_p1):
             block_p1.row_offset += 1
             if not block_p1.is_valid_position(player1_grid.grid):
                 block_p1.row_offset -= 1
                 player1_grid.place_block(block_p1)
                 lines_cleared = player1_grid.clear_rows()
                 if lines_cleared:
+                    clear_sound.play()
                     total_lines_p1 += lines_cleared
                     level_p1 = min(10, total_lines_p1 // 10 + 1)
                     score_p1 += get_line_clear_score(lines_cleared, level_p1)
                     fall_speed_p1 = adjust_fall_speed(total_lines_p1)
                 block_p1 = spawn_block(player1_grid.grid)
+                # Check if new block can be placed
+                if not block_p1.is_valid_position(player1_grid.grid):
+                    p1_active = False
+                    block_p1 = None
+                    game_over_sound.play()
             last_drop_time_p1 = now
 
         ######################
-        # Timed auto-drop for P2
+        # Timed auto-drop for P2 (only if active)
         ######################
-        if block_p2 and (now - last_drop_time_p2 >= fall_speed_p2):
+        if p2_active and block_p2 and (now - last_drop_time_p2 >= fall_speed_p2):
             block_p2.row_offset += 1
             if not block_p2.is_valid_position(player2_grid.grid):
                 block_p2.row_offset -= 1
                 player2_grid.place_block(block_p2)
                 lines_cleared = player2_grid.clear_rows()
                 if lines_cleared:
+                    clear_sound.play()
                     total_lines_p2 += lines_cleared
                     level_p2 = min(10, total_lines_p2 // 10 + 1)
                     score_p2 += get_line_clear_score(lines_cleared, level_p2)
                     fall_speed_p2 = adjust_fall_speed(total_lines_p2)
                 block_p2 = spawn_block(player2_grid.grid)
+                # Check if new block can be placed
+                if not block_p2.is_valid_position(player2_grid.grid):
+                    p2_active = False
+                    block_p2 = None
+                    game_over_sound.play()
             last_drop_time_p2 = now
 
         #########################
@@ -683,10 +796,10 @@ def multiplayer_mode():
             2  # line thickness
         )
 
-        # Draw blocks
-        if block_p1:
+        # Draw blocks (only if player is active)
+        if p1_active and block_p1:
             block_p1.draw(screen, offset_x=p1_offset_x, offset_y=grid_offset_y)
-        if block_p2:
+        if p2_active and block_p2:
             block_p2.draw(screen, offset_x=p2_offset_x, offset_y=grid_offset_y)
 
         # Draw player labels and scores
@@ -694,6 +807,14 @@ def multiplayer_mode():
         p2_label = font.render("PLAYER 2", True, (255, 255, 255))
         screen.blit(p1_label, (p1_offset_x, grid_offset_y - 30))
         screen.blit(p2_label, (p2_offset_x, grid_offset_y - 30))
+
+        # Draw player status
+        if not p1_active:
+            p1_status = font.render("GAME OVER", True, (255, 0, 0))
+            screen.blit(p1_status, (p1_offset_x, grid_offset_y - 60))
+        if not p2_active:
+            p2_status = font.render("GAME OVER", True, (255, 0, 0))
+            screen.blit(p2_status, (p2_offset_x, grid_offset_y - 60))
 
         # Scores
         score_text_p1 = font.render(f"Score: {score_p1}", True, (255, 255, 255))
@@ -725,13 +846,31 @@ def multiplayer_mode():
         pygame.display.flip()
         clock.tick(60)
 
-    # Determine winner after time runs out or block spawn fails
-    if score_p1 > score_p2:
-        winner = "Player 1"
-    elif score_p2 > score_p1:
+    # Determine winner
+    pygame.mixer.music.stop()
+    
+    if not p1_active and not p2_active:
+        # Both players are out - compare scores
+        if score_p1 > score_p2:
+            winner = "Player 1"
+        elif score_p2 > score_p1:
+            winner = "Player 2"
+        else:
+            winner = "tie"
+    elif not p1_active:
+        # Player 1 is out
         winner = "Player 2"
+    elif not p2_active:
+        # Player 2 is out
+        winner = "Player 1"
     else:
-        winner = "tie"
+        # Time ran out - compare scores
+        if score_p1 > score_p2:
+            winner = "Player 1"
+        elif score_p2 > score_p1:
+            winner = "Player 2"
+        else:
+            winner = "tie"
 
     # Show end screen and handle replay
     if show_end_screen(screen, winner, SCREEN_WIDTH, SCREEN_HEIGHT):
