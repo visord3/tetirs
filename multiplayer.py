@@ -7,6 +7,8 @@ import os
 # Import game components
 from grid import Grid
 from colors import Colors
+from constants import *
+from player import Player
 
 # Add missing color constants
 BLACK = (0, 0, 0)
@@ -30,6 +32,15 @@ GRID_WIDTH = 10
 GRID_HEIGHT = 20
 PREVIEW_SIZE = 4
 LEVEL_SPEED = [1000, 800, 600, 500, 400, 300, 250, 200, 150, 100]
+
+# Layout constants
+PANEL_WIDTH = 220
+PANEL_MARGIN = 30
+FIELD_MARGIN = 40
+OUTER_MARGIN = 40
+INFO_PADDING = 20
+NEXT_BOX_SIZE = 4 * CELL_SIZE + 2 * INFO_PADDING
+PANEL_HEIGHT = max(GRID_HEIGHT * CELL_SIZE, 350)
 
 
 class Player:
@@ -56,9 +67,39 @@ class Player:
         self.right_pressed = False
         self.down_pressed = False
         
+        # Fonts
+        self.font_big = pygame.font.SysFont("Arial", 36)
+        self.font_medium = pygame.font.SysFont("Arial", 24)
+        self.font_small = pygame.font.SysFont("Arial", 18)
+        
         # Spawn initial blocks
         self.spawn_block()
         self.spawn_block()
+    
+    def draw_info(self, screen, offset_x, offset_y):
+        """Draw player information and score"""
+        # Draw score panel background
+        score_bg = pygame.Surface((200, 150))
+        score_bg.fill(GRAY)
+        pygame.draw.rect(score_bg, WHITE, score_bg.get_rect(), 2)
+        
+        # Draw player label
+        player_text = self.font_big.render(f"Player {self.player_id}", True, WHITE)
+        player_rect = player_text.get_rect(center=(100, 30))
+        score_bg.blit(player_text, player_rect)
+        
+        # Draw score
+        score_text = self.font_medium.render(f"Score: {self.score:,}", True, WHITE)
+        score_rect = score_text.get_rect(center=(100, 70))
+        score_bg.blit(score_text, score_rect)
+        
+        # Draw level
+        level_text = self.font_medium.render(f"Level: {self.level}", True, WHITE)
+        level_rect = level_text.get_rect(center=(100, 100))
+        score_bg.blit(level_text, level_rect)
+        
+        # Draw the score panel
+        screen.blit(score_bg, (offset_x, offset_y))
     
     def spawn_block(self):
         """Spawn a new tetromino"""
@@ -99,32 +140,12 @@ class Player:
             return self.lock_block()
         return True
     
-    def lock_block(self):
-        """Lock block in place and spawn new one"""
-        if not self.current_block:
-            return False
-        
-        # Place block on grid
-        self.grid.place_block(self.current_block)
-        play_sound("drop")
-        
-        # Clear rows
-        rows_cleared = self.grid.clear_rows()
-        if rows_cleared > 0:
-            play_sound("clear")
-            self.lines_cleared += rows_cleared
-            self.score += rows_cleared * rows_cleared * 100 * self.level
-            self.level = min(10, self.lines_cleared // 10 + 1)
-            self.fall_speed = LEVEL_SPEED[min(9, self.level - 1)]
-        
-        # Spawn new block
-        self.spawn_block()
-        return True
-    
     def move(self, dx, dy):
         """Move the current block"""
         if self.active and self.current_block:
-            return self.current_block.move(dy, dx, self.grid)
+            if self.current_block.move(dy, dx, self.grid):
+                play_sound("move")
+                return True
         return False
     
     def rotate(self):
@@ -165,6 +186,60 @@ class Player:
             if self.drop_block():
                 self.score += 1  # 1 point per soft drop
                 self.last_move_time = current_time
+    
+    def lock_block(self):
+        """Lock block in place and spawn new one"""
+        if not self.current_block:
+            return False
+        
+        # Place block on grid
+        self.grid.place_block(self.current_block)
+        play_sound("drop")
+        
+        # Clear rows
+        rows_cleared = self.grid.clear_rows()
+        if rows_cleared > 0:
+            play_sound("clear")
+            self.lines_cleared += rows_cleared
+            self.score += rows_cleared * rows_cleared * 100 * self.level
+            old_level = self.level
+            self.level = min(10, self.lines_cleared // 10 + 1)
+            if self.level > old_level:
+                play_sound("level_up")
+            self.fall_speed = LEVEL_SPEED[min(9, self.level - 1)]
+        
+        # Spawn new block
+        self.spawn_block()
+        return True
+
+    def draw_current_block(self, screen, offset_x, offset_y):
+        """Draw the current falling block on the grid"""
+        if self.active and self.current_block:
+            self.current_block.draw(screen, offset_x, offset_y)
+            
+    def draw_next_piece(self, screen, offset_x, offset_y):
+        """Draw the next piece preview"""
+        if self.next_block:
+            # Draw next piece label
+            preview_text = self.font_medium.render("Next:", True, WHITE)
+            screen.blit(preview_text, (offset_x, offset_y))
+            
+            # Create preview surface
+            preview_surface = pygame.Surface((PREVIEW_SIZE * CELL_SIZE, PREVIEW_SIZE * CELL_SIZE))
+            preview_surface.fill(GRAY)
+            pygame.draw.rect(preview_surface, WHITE, preview_surface.get_rect(), 2)
+            
+            # Draw the next block centered in preview
+            original_offsets = (self.next_block.row_offset, self.next_block.col_offset)
+            self.next_block.row_offset = 1
+            self.next_block.col_offset = 1
+            self.next_block.draw(preview_surface, 0, 0)
+            
+            # Restore original offsets
+            self.next_block.row_offset, self.next_block.col_offset = original_offsets
+            
+            # Draw the preview surface
+            screen.blit(preview_surface, (offset_x, offset_y + 30))
 
 
 def show_end_screen(screen, winner, player1_score, player2_score):
@@ -221,6 +296,7 @@ def show_end_screen(screen, winner, player1_score, player2_score):
         # Handle events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                stop_music()
                 pygame.quit()
                 sys.exit()
             
@@ -251,249 +327,144 @@ def show_end_screen(screen, winner, player1_score, player2_score):
 
 
 def multiplayer_mode():
-    """Main multiplayer game mode"""
-    # Constants
-    SCREEN_WIDTH = 800
-    SCREEN_HEIGHT = 600
-    GAME_DURATION = 120000  # 2 minutes in milliseconds
-    
+    """Run multiplayer Tetris game"""
     # Initialize pygame
     pygame.init()
     pygame.mixer.init()
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Multiplayer Tetris")
     
-    # Initialize controller
-    controller = None
-    if pygame.joystick.get_count() > 0:
-        controller = pygame.joystick.Joystick(0)
-        controller.init()
-        print(f"Controller connected: {controller.get_name()}")
-    
-    # Initialize sounds
+    # Load sounds
     load_game_sounds()
-    play_music(volume=0.5)
     
-    # Main game loop - allows replaying without recursion
-    play_again = True
-    while play_again:
-        # Create players
-        player1 = Player(1)
-        player2 = Player(2)
+    # Play background music
+    play_music()
+    
+    # Setup display
+    window_width = (OUTER_MARGIN * 2 +
+                    2 * GRID_WIDTH * CELL_SIZE +
+                    2 * PANEL_WIDTH +
+                    2 * PANEL_MARGIN +
+                    FIELD_MARGIN)
+    window_height = OUTER_MARGIN * 2 + PANEL_HEIGHT
+    screen = pygame.display.set_mode((window_width, window_height))
+    pygame.display.set_caption("Tetris - Multiplayer")
+    
+    # Create players
+    player1 = Player(1)
+    player2 = Player(2)
+    
+    # Game loop variables
+    clock = pygame.time.Clock()
+    running = True
+    move_delay = 100  # ms between moves when holding a direction
+    
+    # Center both grids and info panels as a group
+    grid1_x = OUTER_MARGIN
+    panel1_x = grid1_x + GRID_WIDTH * CELL_SIZE + PANEL_MARGIN
+    grid2_x = panel1_x + PANEL_WIDTH + FIELD_MARGIN
+    panel2_x = grid2_x + GRID_WIDTH * CELL_SIZE + PANEL_MARGIN
+    grid_y = OUTER_MARGIN
+    panel_y = OUTER_MARGIN
+    score_y = panel_y + INFO_PADDING
+    next_y = score_y + 100 + INFO_PADDING
+    controls_y = next_y + NEXT_BOX_SIZE + INFO_PADDING
+    
+    while running:
+        current_time = pygame.time.get_ticks()
         
-        # Game state
-        clock = pygame.time.Clock()
-        running = True
-        start_time = pygame.time.get_ticks()
-        move_delay = 100
+        # Check if music should be playing
+        ensure_music_playing()
         
-        # Fonts
-        font_big = pygame.font.SysFont("Arial", 36)
-        font_medium = pygame.font.SysFont("Arial", 24)
-        font_small = pygame.font.SysFont("Arial", 18)
-        
-        # Game loop
-        while running:
-            ensure_music_playing()
-            
-            current_time = pygame.time.get_ticks()
-            elapsed_time = current_time - start_time
-            remaining_time = max(0, GAME_DURATION - elapsed_time)
-            
-            # Check game over conditions
-            if remaining_time == 0 or (not player1.active and not player2.active):
+        # Handle events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
                 running = False
-                break
+                stop_music()
             
-            # Handle events
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    stop_music()
-                    pygame.quit()
-                    sys.exit()
-                
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        stop_music()
-                        return  # Return to main menu
-                    
-                    # Player 1 controls (arrows)
-                    if player1.active and player1.current_block:
-                        if event.key == pygame.K_LEFT:
-                            player1.left_pressed = True
-                            player1.move(-1, 0)
-                            player1.last_move_time = current_time
-                        elif event.key == pygame.K_RIGHT:
-                            player1.right_pressed = True
-                            player1.move(1, 0)
-                            player1.last_move_time = current_time
-                        elif event.key == pygame.K_DOWN:
-                            player1.down_pressed = True
-                            player1.drop_block()
-                            player1.last_move_time = current_time
-                        elif event.key == pygame.K_UP:
-                            player1.rotate()
-                        elif event.key == pygame.K_RSHIFT:
-                            player1.hard_drop()
-                    
-                    # Player 2 controls (WASD)
-                    if player2.active and player2.current_block:
-                        if event.key == pygame.K_a:
-                            player2.left_pressed = True
-                            player2.move(-1, 0)
-                            player2.last_move_time = current_time
-                        elif event.key == pygame.K_d:
-                            player2.right_pressed = True
-                            player2.move(1, 0)
-                            player2.last_move_time = current_time
-                        elif event.key == pygame.K_s:
-                            player2.down_pressed = True
-                            player2.drop_block()
-                            player2.last_move_time = current_time
-                        elif event.key == pygame.K_w:
-                            player2.rotate()
-                        elif event.key == pygame.K_SPACE:
-                            player2.hard_drop()
-                
-                elif event.type == pygame.KEYUP:
-                    # Player 1
-                    if event.key == pygame.K_LEFT:
-                        player1.left_pressed = False
-                    elif event.key == pygame.K_RIGHT:
-                        player1.right_pressed = False
-                    elif event.key == pygame.K_DOWN:
-                        player1.down_pressed = False
-                    
-                    # Player 2
-                    elif event.key == pygame.K_a:
-                        player2.left_pressed = False
-                    elif event.key == pygame.K_d:
-                        player2.right_pressed = False
-                    elif event.key == pygame.K_s:
-                        player2.down_pressed = False
-                
-                # Controller support for Player 1
-                if controller and player1.active and player1.current_block:
-                    if event.type == pygame.JOYHATMOTION:
-                        hat_x, hat_y = controller.get_hat(0)
-                        player1.left_pressed = (hat_x == -1)
-                        player1.right_pressed = (hat_x == 1)
-                        player1.down_pressed = (hat_y == -1)
-                        
-                        if hat_x == -1:
-                            player1.move(-1, 0)
-                        elif hat_x == 1:
-                            player1.move(1, 0)
-                        if hat_y == -1:
-                            player1.drop_block()
-                    
-                    if event.type == pygame.JOYBUTTONDOWN:
-                        if controller.get_button(3):  # Triangle
-                            player1.rotate()
-                        elif controller.get_button(0):  # X
-                            player1.hard_drop()
+            # Player 1 controls (WASD + QE)
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_a:
+                    player1.left_pressed = True
+                elif event.key == pygame.K_d:
+                    player1.right_pressed = True
+                elif event.key == pygame.K_s:
+                    player1.down_pressed = True
+                elif event.key == pygame.K_w:
+                    player1.rotate()
+                elif event.key == pygame.K_SPACE:
+                    player1.hard_drop()
+                elif event.key == pygame.K_ESCAPE:
+                    running = False
             
-            # Handle continuous movement
-            player1.handle_continuous_movement(current_time, move_delay)
-            player2.handle_continuous_movement(current_time, move_delay)
+            elif event.type == pygame.KEYUP:
+                if event.key == pygame.K_a:
+                    player1.left_pressed = False
+                elif event.key == pygame.K_d:
+                    player1.right_pressed = False
+                elif event.key == pygame.K_s:
+                    player1.down_pressed = False
             
-            # Update game state
-            player1.update(current_time)
-            player2.update(current_time)
+            # Player 2 controls (Arrow keys + P)
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_LEFT:
+                    player2.left_pressed = True
+                elif event.key == pygame.K_RIGHT:
+                    player2.right_pressed = True
+                elif event.key == pygame.K_DOWN:
+                    player2.down_pressed = True
+                elif event.key == pygame.K_UP:
+                    player2.rotate()
+                elif event.key == pygame.K_RETURN:
+                    player2.hard_drop()
             
-            # Draw everything
-            screen.fill(GRAY)
-            
-            # Title
-            title_text = font_big.render("MULTIPLAYER TETRIS", True, WHITE)
-            title_rect = title_text.get_rect(center=(SCREEN_WIDTH // 2, 30))
-            screen.blit(title_text, title_rect)
-            
-            # Calculate grid positions
-            grid_width = GRID_WIDTH * CELL_SIZE
-            grid_height = GRID_HEIGHT * CELL_SIZE
-            grid_y = 80
-            
-            p1_grid_x = SCREEN_WIDTH // 4 - grid_width // 2
-            p2_grid_x = 3 * SCREEN_WIDTH // 4 - grid_width // 2
-            
-            # Draw grids
-            player1.grid.draw(screen, p1_grid_x, grid_y)
-            player2.grid.draw(screen, p2_grid_x, grid_y)
-            
-            # Draw current pieces
-            if player1.current_block and player1.active:
-                player1.current_block.draw(screen, p1_grid_x, grid_y)
-            
-            if player2.current_block and player2.active:
-                player2.current_block.draw(screen, p2_grid_x, grid_y)
-            
-            # Draw divider
-            pygame.draw.line(screen, WHITE, 
-                           (SCREEN_WIDTH // 2, 60), 
-                           (SCREEN_WIDTH // 2, SCREEN_HEIGHT - 60), 2)
-            
-            # Draw player labels
-            p1_label = font_medium.render("PLAYER 1", True, WHITE)
-            screen.blit(p1_label, (p1_grid_x, grid_y - 30))
-            
-            p2_label = font_medium.render("PLAYER 2", True, WHITE)
-            screen.blit(p2_label, (p2_grid_x, grid_y - 30))
-            
-            # Draw status
-            if not player1.active:
-                p1_status = font_medium.render("GAME OVER", True, RED)
-                screen.blit(p1_status, (p1_grid_x, grid_y - 55))
-            
-            if not player2.active:
-                p2_status = font_medium.render("GAME OVER", True, RED)
-                screen.blit(p2_status, (p2_grid_x, grid_y - 55))
-            
-            # Draw info
-            info_y = grid_y + grid_height + 10
-            
-            # Player 1 info
-            p1_score = font_small.render(f"Score: {player1.score:,}", True, WHITE)
-            screen.blit(p1_score, (p1_grid_x, info_y))
-            
-            p1_lines = font_small.render(f"Lines: {player1.lines_cleared}", True, WHITE)
-            screen.blit(p1_lines, (p1_grid_x, info_y + 25))
-            
-            p1_controls = font_small.render("← → ↓ ↑ RShift", True, (200, 200, 200))
-            screen.blit(p1_controls, (p1_grid_x, info_y + 50))
-            
-            # Player 2 info
-            p2_score = font_small.render(f"Score: {player2.score:,}", True, WHITE)
-            screen.blit(p2_score, (p2_grid_x, info_y))
-            
-            p2_lines = font_small.render(f"Lines: {player2.lines_cleared}", True, WHITE)
-            screen.blit(p2_lines, (p2_grid_x, info_y + 25))
-            
-            p2_controls = font_small.render("A D S W Space", True, (200, 200, 200))
-            screen.blit(p2_controls, (p2_grid_x, info_y + 50))
-            
-            # Draw timer
-            remaining_seconds = remaining_time // 1000
-            timer_text = font_medium.render(f"Time: {remaining_seconds}s", True, WHITE)
-            timer_rect = timer_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30))
-            screen.blit(timer_text, timer_rect)
-            
-            pygame.display.flip()
-            clock.tick(60)
+            elif event.type == pygame.KEYUP:
+                if event.key == pygame.K_LEFT:
+                    player2.left_pressed = False
+                elif event.key == pygame.K_RIGHT:
+                    player2.right_pressed = False
+                elif event.key == pygame.K_DOWN:
+                    player2.down_pressed = False
         
-        # Determine winner
-        stop_music()
+        # Update players
+        player1.update(current_time)
+        player2.update(current_time)
         
-        if player1.score > player2.score:
-            winner = "Player 1"
-        elif player2.score > player1.score:
-            winner = "Player 2"
-        else:
-            winner = "tie"
+        # Handle continuous movement
+        player1.handle_continuous_movement(current_time, move_delay)
+        player2.handle_continuous_movement(current_time, move_delay)
         
-        # Show end screen
-        play_again = show_end_screen(screen, winner, player1.score, player2.score)
+        # Clear screen
+        screen.fill(BLACK)
         
-        if play_again:
-            # Restart music for next game
-            play_music(volume=0.5)
+        # Draw player 1's grid and info
+        player1.grid.draw(screen, grid1_x, grid_y)
+        player1.draw_current_block(screen, grid1_x, grid_y)
+        player1.draw_info(screen, panel1_x, panel_y)
+        player1.draw_next_piece(screen, panel1_x + INFO_PADDING, next_y)
+        font = pygame.font.SysFont("Arial", 18)
+        controls = ["Controls:", "A/D: Move", "W: Rotate", "S: Down", "Space: Hard Drop"]
+        for i, line in enumerate(controls):
+            text = font.render(line, True, (255, 255, 255))
+            screen.blit(text, (panel1_x + INFO_PADDING, controls_y + i * 24))
+        
+        # Draw player 2's grid and info
+        player2.grid.draw(screen, grid2_x, grid_y)
+        player2.draw_current_block(screen, grid2_x, grid_y)
+        player2.draw_info(screen, panel2_x, panel_y)
+        player2.draw_next_piece(screen, panel2_x + INFO_PADDING, next_y)
+        controls2 = ["Controls:", "←/→: Move", "↑: Rotate", "↓: Down", "Enter: Hard Drop"]
+        for i, line in enumerate(controls2):
+            text = font.render(line, True, (255, 255, 255))
+            screen.blit(text, (panel2_x + INFO_PADDING, controls_y + i * 24))
+        
+        # Check for game over
+        if not player1.active or not player2.active:
+            winner = "Player 1" if player2.active else "Player 2" if player1.active else "tie"
+            show_end_screen(screen, winner, player1.score, player2.score)
+            running = False
+        
+        pygame.display.flip()
+        clock.tick(60)
+    
+    # Stop music when quitting
+    stop_music()
+    pygame.quit()

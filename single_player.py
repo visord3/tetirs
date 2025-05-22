@@ -46,11 +46,24 @@ GRID_HEIGHT = 20
 PREVIEW_SIZE = 4
 LEVEL_SPEED = [1000, 800, 600, 500, 400, 300, 250, 200, 150, 100]  # ms per drop
 
+# Layout constants
+PANEL_WIDTH = 220
+PANEL_MARGIN = 30
+OUTER_MARGIN = 40
+INFO_PADDING = 20
+NEXT_BOX_SIZE = 4 * CELL_SIZE + 2 * INFO_PADDING
+PANEL_HEIGHT = max(GRID_HEIGHT * CELL_SIZE, 350)
 
 class SinglePlayerGame:
     def __init__(self, controller=None):
         """Initialize the single player Tetris game with optional controller support"""
-        self.controller = controller
+        # Always initialize joystick
+        pygame.joystick.init()
+        if pygame.joystick.get_count() > 0:
+            self.controller = pygame.joystick.Joystick(0)
+            self.controller.init()
+        else:
+            self.controller = None
 
         # Game state
         self.grid = [[0 for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
@@ -63,6 +76,11 @@ class SinglePlayerGame:
         self.lines_cleared = 0
         self.game_over = False
         self.paused = False
+        
+        # Timer for tracking gameplay time
+        self.start_time = pygame.time.get_ticks()
+        self.total_time = 0  # In milliseconds
+        self.paused_time = 0  # To track time while paused
 
         # Timing
         self.clock = pygame.time.Clock()
@@ -174,7 +192,10 @@ class SinglePlayerGame:
             play_sound("clear")
             self.score += lines_cleared * lines_cleared * 100 * self.level
             self.lines_cleared += lines_cleared
+            old_level = self.level
             self.level = min(10, self.lines_cleared // 10 + 1)
+            if self.level > old_level:
+                play_sound("level_up")
             self.speed = LEVEL_SPEED[min(9, self.level - 1)]
 
         return lines_cleared
@@ -185,6 +206,7 @@ class SinglePlayerGame:
         if self.check_collision():
             self.piece_x += 1
             return False
+        play_sound("move")
         return True
 
     def move_right(self):
@@ -193,6 +215,7 @@ class SinglePlayerGame:
         if self.check_collision():
             self.piece_x -= 1
             return False
+        play_sound("move")
         return True
 
     def move_down(self):
@@ -219,6 +242,10 @@ class SinglePlayerGame:
             return
 
         current_time = pygame.time.get_ticks()
+        
+        # Update game timer
+        if not self.game_over and not self.paused:
+            self.total_time = current_time - self.start_time
 
         # Handle automatic piece drop
         if current_time - self.drop_time > self.speed:
@@ -258,10 +285,20 @@ class SinglePlayerGame:
             elif event.key == pygame.K_SPACE:
                 self.drop_piece()
             elif event.key == pygame.K_p:
-                self.paused = not self.paused
+                # Toggle pause state and handle timer accordingly
+                if not self.paused:
+                    # Pause the game - record the time when paused
+                    self.paused = True
+                    self.paused_time = pygame.time.get_ticks()
+                else:
+                    # Unpause the game - adjust the start time
+                    self.paused = False
+                    # Add the paused duration to the start time
+                    pause_duration = pygame.time.get_ticks() - self.paused_time
+                    self.start_time += pause_duration
             elif event.key == pygame.K_r and self.game_over:
                 self.__init__(self.controller)  # Reset game
-                play_music(volume=0.7)  # Restart music
+                play_music()  # Restart music
             # Volume controls
             elif event.key in (pygame.K_PLUS, pygame.K_EQUALS):
                 current_volume = pygame.mixer.music.get_volume()
@@ -353,7 +390,7 @@ class SinglePlayerGame:
                 # Share button (8) for restart when game over
                 elif self.controller.get_button(8) and self.game_over:
                     self.__init__(self.controller)  # Reset game
-                    play_music(volume=0.7)  # Restart music
+                    play_music()  # Restart music
 
     def draw_grid(self, screen, offset_x, offset_y):
         """Draw the game grid and current piece"""
@@ -402,22 +439,40 @@ class SinglePlayerGame:
                                       CELL_SIZE - 1, CELL_SIZE - 1))
 
     def draw_info(self, screen, offset_x, offset_y):
-        """Draw game information (score, level, etc.)"""
-        # Score
-        score_text = self.font_medium.render(f"Score: {self.score}", True, WHITE)
-        screen.blit(score_text, (offset_x, offset_y))
-
-        # Level
+        """Draw game information"""
+        # Draw score with a nice background
+        score_bg = pygame.Surface((200, 150))
+        score_bg.fill(GRAY)
+        pygame.draw.rect(score_bg, WHITE, score_bg.get_rect(), 2)
+        
+        # Draw score text
+        score_text = self.font_big.render(f"Score: {self.score}", True, WHITE)
+        score_rect = score_text.get_rect(center=(100, 30))
+        score_bg.blit(score_text, score_rect)
+        
+        # Draw level text
         level_text = self.font_medium.render(f"Level: {self.level}", True, WHITE)
-        screen.blit(level_text, (offset_x, offset_y + 30))
-
-        # Lines
-        lines_text = self.font_medium.render(f"Lines: {self.lines_cleared}", True, WHITE)
-        screen.blit(lines_text, (offset_x, offset_y + 60))
-
-        # Next piece label
-        next_text = self.font_medium.render("Next:", True, WHITE)
-        screen.blit(next_text, (offset_x, offset_y + 100))
+        level_rect = level_text.get_rect(center=(100, 70))
+        score_bg.blit(level_text, level_rect)
+        
+        # Convert milliseconds to minutes:seconds format
+        minutes = self.total_time // 60000
+        seconds = (self.total_time % 60000) // 1000
+        time_str = f"{minutes:02d}:{seconds:02d}"
+        
+        # Draw timer text
+        time_text = self.font_medium.render(f"Time: {time_str}", True, WHITE)
+        time_rect = time_text.get_rect(center=(100, 110))
+        score_bg.blit(time_text, time_rect)
+        
+        # Draw the score panel
+        screen.blit(score_bg, (offset_x + GRID_WIDTH * CELL_SIZE + 20, offset_y))
+        
+        # Draw next piece preview
+        self.draw_next_piece(screen, offset_x, offset_y + 120)
+        
+        # Draw controls
+        self.draw_controls(screen, offset_x, offset_y + 300)
 
     def draw_controls(self, screen, offset_x, offset_y):
         """Draw control information"""
@@ -484,28 +539,38 @@ class SinglePlayerGame:
         continue_rect = continue_text.get_rect(center=(width // 2, height // 2 + 40))
         screen.blit(continue_text, continue_rect)
 
+    def check_controller(self):
+        """Check and re-initialize controller if needed"""
+        if not self.controller or not self.controller.get_init():
+            pygame.joystick.quit()
+            pygame.joystick.init()
+            if pygame.joystick.get_count() > 0:
+                self.controller = pygame.joystick.Joystick(0)
+                self.controller.init()
+            else:
+                self.controller = None
+
     def run(self, screen):
         """Run the game loop"""
-        # Calculate positions
-        window_width, window_height = screen.get_size()
-        grid_offset_x = (window_width - GRID_WIDTH * CELL_SIZE) // 2 - 100
-        grid_offset_y = (window_height - GRID_HEIGHT * CELL_SIZE) // 2
-
-        info_offset_x = grid_offset_x + GRID_WIDTH * CELL_SIZE + 30
-        info_offset_y = grid_offset_y
-
-        next_piece_offset_x = info_offset_x
-        next_piece_offset_y = info_offset_y + 140
-
-        controls_offset_x = grid_offset_x - 200
-        controls_offset_y = grid_offset_y
+        # Calculate window size and positions
+        window_width = OUTER_MARGIN * 2 + GRID_WIDTH * CELL_SIZE + PANEL_MARGIN + PANEL_WIDTH
+        window_height = OUTER_MARGIN * 2 + PANEL_HEIGHT
+        screen = pygame.display.set_mode((window_width, window_height))
+        grid_x = OUTER_MARGIN
+        grid_y = OUTER_MARGIN
+        panel_x = grid_x + GRID_WIDTH * CELL_SIZE + PANEL_MARGIN
+        panel_y = grid_y
+        score_y = panel_y + INFO_PADDING
+        next_y = score_y + 100 + INFO_PADDING
+        controls_y = next_y + NEXT_BOX_SIZE + INFO_PADDING
 
         # Play background music
-        play_music(volume=0.7)
+        play_music()
 
         # Game loop
         running = True
         while running:
+            self.check_controller()  # Check for controller reconnection
             # Check if music should be playing
             ensure_music_playing()
             
@@ -543,10 +608,10 @@ class SinglePlayerGame:
             screen.blit(volume_text, (window_width // 2 - 100, window_height - 30))
 
             # Draw game elements
-            self.draw_grid(screen, grid_offset_x, grid_offset_y)
-            self.draw_info(screen, info_offset_x, info_offset_y)
-            self.draw_next_piece(screen, next_piece_offset_x, next_piece_offset_y)
-            self.draw_controls(screen, controls_offset_x, controls_offset_y)
+            self.draw_grid(screen, grid_x, grid_y)
+            self.draw_info(screen, panel_x, panel_y)
+            # Draw controls using the existing method
+            self.draw_controls(screen, panel_x + INFO_PADDING, controls_y)
 
             # Draw pause or game over overlay if necessary
             if self.paused:

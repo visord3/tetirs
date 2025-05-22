@@ -3,6 +3,9 @@ import pygame
 import math
 import random
 
+# Import centralized sound system
+from sound_manager import load_game_sounds, play_sound, play_music, stop_music
+
 def safe_get_events():
     """Safely get pygame events with fallback"""
     try:
@@ -145,59 +148,6 @@ class MenuButton:
         if self.callback:
             self.callback()
 
-# Sound Manager - Consolidated sound system
-class SoundManager:
-    def __init__(self):
-        self.sounds = {}
-        self.music_loaded = False
-        self.sound_enabled = True
-        self.music_volume = 0.7
-        self.effects_volume = 0.5
-        # Initialize sounds immediately to avoid any issues
-        self._init_dummy_sounds()
-        
-    def _init_dummy_sounds(self):
-        """Initialize dummy sounds immediately"""
-        class DummySound:
-            def play(self): pass
-            def stop(self): pass
-            def set_volume(self, vol): pass
-        
-        self.sounds = {
-            "menu_select": DummySound(),
-            "rotate": DummySound(),
-            "drop": DummySound(),
-            "clear": DummySound(),
-            "game_over": DummySound()
-        }
-        
-    def create_placeholder_sounds(self):
-        """This method now does nothing since sounds are created in __init__"""
-        print("Using pre-initialized dummy sounds")
-    
-    def play_sound(self, name):
-        if self.sound_enabled and name in self.sounds:
-            self.sounds[name].play()
-    
-    def play_music(self):
-        pass
-    
-    def stop_music(self):
-        try:
-            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
-                pygame.mixer.music.stop()
-        except:
-            pass
-    
-    def set_sound_enabled(self, enabled):
-        self.sound_enabled = enabled
-        if not enabled:
-            self.stop_music()
-
-# Global sound manager instance
-sound_manager = SoundManager()
-# Remove the problematic call entirely - sounds are now initialized in __init__
-
 # Controller manager
 class ControllerManager:
     def __init__(self):
@@ -275,6 +225,9 @@ def main_menu():
     title_offset = 0
     title_time = 0
     
+    # Start playing menu music (ensure it always starts when entering menu)
+    play_music()
+    
     while running:
         dt = clock.tick(60)
         mouse_pos = pygame.mouse.get_pos()
@@ -282,8 +235,8 @@ def main_menu():
         # Update controller manager
         controller_manager.update(dt)
         
-        # Handle events
-        for event in pygame.event.get():
+        # Handle events using safe_get_events
+        for event in safe_get_events():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
@@ -292,7 +245,9 @@ def main_menu():
             if event.type == pygame.MOUSEBUTTONDOWN:
                 for button in buttons:
                     if button.rect.collidepoint(mouse_pos):
-                        sound_manager.play_sound("menu_select")
+                        play_sound("menu_select")
+                        # Stop music if leaving menu
+                        stop_music()
                         button.handle_click()
                         return
             
@@ -302,15 +257,19 @@ def main_menu():
                     buttons[selected_index].selected = False
                     selected_index = (selected_index - 1) % len(buttons)
                     buttons[selected_index].selected = True
-                    sound_manager.play_sound("menu_select")
+                    play_sound("menu_select")
                 elif event.key == pygame.K_DOWN:
                     buttons[selected_index].selected = False
                     selected_index = (selected_index + 1) % len(buttons)
                     buttons[selected_index].selected = True
-                    sound_manager.play_sound("menu_select")
+                    play_sound("menu_select")
                 elif event.key == pygame.K_RETURN:
-                    sound_manager.play_sound("menu_select")
+                    play_sound("menu_select")
+                    # Stop music if leaving menu
+                    stop_music()
                     buttons[selected_index].handle_click()
+                    return
+                elif event.key == pygame.K_ESCAPE:
                     return
             
             # Controller controls
@@ -321,16 +280,18 @@ def main_menu():
                         buttons[selected_index].selected = False
                         selected_index = (selected_index - 1) % len(buttons)
                         buttons[selected_index].selected = True
-                        sound_manager.play_sound("menu_select")
+                        play_sound("menu_move")
                     elif hat_y == -1:  # Down
                         buttons[selected_index].selected = False
                         selected_index = (selected_index + 1) % len(buttons)
                         buttons[selected_index].selected = True
-                        sound_manager.play_sound("menu_select")
+                        play_sound("menu_move")
                 
                 if event.type == pygame.JOYBUTTONDOWN:
                     if event.button == 0:  # X button
-                        sound_manager.play_sound("menu_select")
+                        play_sound("menu_select")
+                        # Stop music if leaving menu
+                        stop_music()
                         buttons[selected_index].handle_click()
                         return
         
@@ -343,7 +304,7 @@ def main_menu():
             # Check mouse hover
             if button.rect.collidepoint(mouse_pos) and not button.selected:
                 if not button.hover:
-                    sound_manager.play_sound("menu_select")
+                    play_sound("menu_select")
                 buttons[selected_index].selected = False
                 selected_index = i
                 button.selected = True
@@ -393,7 +354,7 @@ def settings_menu():
     running = True
     
     buttons = [
-        MenuButton(f"Sound: {'ON' if sound_manager.sound_enabled else 'OFF'}", 
+        MenuButton(f"Sound: {'ON' if pygame.mixer.music.get_volume() > 0 else 'OFF'}", 
                    SCREEN_WIDTH // 2, 250, 300, 60),
         MenuButton("Back", SCREEN_WIDTH // 2, 350, 300, 60)
     ]
@@ -415,17 +376,21 @@ def settings_menu():
                     buttons[selected_index].selected = False
                     selected_index = (selected_index - 1) % len(buttons)
                     buttons[selected_index].selected = True
-                    sound_manager.play_sound("menu_select")
+                    play_sound("menu_select")
                 elif event.key == pygame.K_DOWN:
                     buttons[selected_index].selected = False
                     selected_index = (selected_index + 1) % len(buttons)
                     buttons[selected_index].selected = True
-                    sound_manager.play_sound("menu_select")
+                    play_sound("menu_select")
                 elif event.key == pygame.K_RETURN:
                     if selected_index == 0:  # Toggle sound
-                        sound_manager.set_sound_enabled(not sound_manager.sound_enabled)
-                        buttons[0].text = f"Sound: {'ON' if sound_manager.sound_enabled else 'OFF'}"
-                        sound_manager.play_sound("menu_select")
+                        if pygame.mixer.music.get_volume() > 0:
+                            pygame.mixer.music.set_volume(0.0)
+                            buttons[0].text = "Sound: OFF"
+                        else:
+                            pygame.mixer.music.set_volume(0.7)
+                            buttons[0].text = "Sound: ON"
+                        play_sound("menu_select")
                     elif selected_index == 1:  # Back
                         return
                 elif event.key == pygame.K_ESCAPE:

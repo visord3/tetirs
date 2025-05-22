@@ -19,16 +19,16 @@ class Grid:
     def draw(self, screen, offset_x=0, offset_y=0):
         """
         Draw each cell in the grid, applying offset_x and offset_y.
+        Also draw a white border and faint grid lines for empty cells.
         """
         for row in range(self.num_rows):
             for col in range(self.num_cols):
                 cell_value = self.grid[row][col]
                 # Use colors from the Colors class
                 if cell_value == 0:
-                    color = self.colors[0]  # Empty cell color
+                    color = (30, 30, 30)  # Faint gray for empty cells
                 else:
                     color = self.colors[min(cell_value, len(self.colors) - 1)]
-                
                 cell_rect = pygame.Rect(
                     offset_x + col * self.cell_size,
                     offset_y + row * self.cell_size,
@@ -36,6 +36,14 @@ class Grid:
                     self.cell_size - 1
                 )
                 pygame.draw.rect(screen, color, cell_rect)
+                # Draw faint grid lines for all cells
+                pygame.draw.rect(screen, (60, 60, 60), cell_rect, 1)
+        # Draw a white border around the grid
+        border_rect = pygame.Rect(
+            offset_x, offset_y,
+            self.num_cols * self.cell_size, self.num_rows * self.cell_size
+        )
+        pygame.draw.rect(screen, (255, 255, 255), border_rect, 2)
 
     def place_block(self, block):
         """
@@ -44,7 +52,6 @@ class Grid:
         for (row, col) in block.get_cell_positions():
             if 0 <= row < self.num_rows and 0 <= col < self.num_cols:
                 self.grid[row][col] = block.id
-                print(f"Locked block ID {block.id} at row {row}, col {col}")
 
     def clear_rows(self):
         """
