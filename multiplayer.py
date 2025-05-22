@@ -124,6 +124,7 @@ class Block:
                         return False
                     
                     # Check collision with existing blocks, but only if we're within the grid
+                    # This check allows blocks to come in from the top
                     if grid_row >= 0 and grid.grid[grid_row][grid_col] != 0:
                         return False
         
@@ -193,7 +194,7 @@ class Grid:
         else:
             print("WARNING: No cells were placed! Possible collision detection issue.")
             
-        return cells_placed > 0
+        return cells_placed
 
     def clear_rows(self):
         """Clear completed rows and return the number cleared"""
@@ -256,20 +257,26 @@ class Player:
         if not self.active or not self.current_block:
             return False
             
-        # Try to move down
+        # Try to move down - use the move method for consistency
         if not self.current_block.move(1, 0, self.grid):
             # Block couldn't move down, so lock it and spawn a new one
-            self.lock_block()
+            success = self.lock_block()
+            
+            # Debugging info
+            if not success:
+                print("WARNING: Failed to lock block!")
+                
             return False
         return True
             
     def lock_block(self):
         """Lock block in place, clear rows, spawn new block"""
         if not self.current_block:
-            return
+            return False
             
         # Place the block on the grid
-        if self.grid.place_block(self.current_block):
+        cells_placed = self.grid.place_block(self.current_block)
+        if cells_placed > 0:
             play_sound("drop")
             
             # Clear completed rows
@@ -284,14 +291,17 @@ class Player:
             # Spawn a new block
             self.current_block = spawn_block(self.grid.width)
             
-            # Check if new block can be placed
+            # Check if new block can be placed (GAME OVER check)
             if not self.current_block.is_valid_position(self.grid):
                 print("Game over - new block cannot be placed")
                 self.active = False
                 self.current_block = None
                 play_sound("game_over")
+                
+            return True
         else:
             print("WARNING: Failed to place block on grid!")
+            return False
 
     def hard_drop(self):
         """Drop the block to the bottom immediately"""

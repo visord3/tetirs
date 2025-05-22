@@ -8,7 +8,7 @@ from multiplayer import multiplayer_mode
 
 # Initialize pygame
 pygame.init()
-pygame.mixer.init()
+pygame.mixer.init()  # Initialize mixer early
 pygame.joystick.init()
 
 # Screen dimensions
@@ -58,9 +58,13 @@ def main_menu():
     """Main menu with controller support"""
     global controller
 
-    # Background music (optional)
-    # pygame.mixer.music.load("menu_music.mp3")
-    # pygame.mixer.music.play(-1)  # Loop infinitely
+    # Optional background menu music
+    try:
+        if os.path.exists("assets/music/menu_music.wav"):
+            pygame.mixer.music.load("assets/music/menu_music.wav")
+            pygame.mixer.music.play(-1)  # Loop infinitely
+    except Exception as e:
+        print(f"Error loading menu music: {e}")
 
     # Initialize controller
     controller = initialize_controller()

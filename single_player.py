@@ -1,6 +1,12 @@
+# This file contains changes needed for single_player.py to use the same sound system
+# as multiplayer.py
+
 import pygame
 import random
 import sys
+
+# Import sound management system
+from sound_manager import load_game_sounds, play_sound, play_music, stop_music, ensure_music_playing
 
 # Colors
 BLACK = (0, 0, 0)
@@ -65,11 +71,8 @@ class SinglePlayerGame:
         self.right_pressed = False
         self.down_pressed = False
 
-        # Sounds
-        # pygame.mixer.music.load("game_music.mp3")
-        # self.rotate_sound = pygame.mixer.Sound("rotate.wav")
-        # self.clear_sound = pygame.mixer.Sound("clear.wav")
-        # self.drop_sound = pygame.mixer.Sound("drop.wav")
+        # Initialize sounds
+        load_game_sounds()
 
         # Fonts
         self.font_big = pygame.font.SysFont("Arial", 36)
@@ -99,6 +102,7 @@ class SinglePlayerGame:
         # Check if new piece overlaps with existing blocks (game over)
         if self.check_collision():
             self.game_over = True
+            play_sound("game_over")
 
     def rotate_piece(self):
         """Rotate the current piece clockwise"""
@@ -115,6 +119,9 @@ class SinglePlayerGame:
             # Restore original piece if rotation causes collision
             self.current_piece = original_piece
             return False
+        
+        # Play rotation sound
+        play_sound("rotate")
         return True
 
     def check_collision(self):
@@ -138,6 +145,9 @@ class SinglePlayerGame:
             for x, cell in enumerate(row):
                 if cell and 0 <= self.piece_y + y < GRID_HEIGHT:
                     self.grid[self.piece_y + y][self.piece_x + x] = self.color_index + 1
+        
+        # Play drop sound
+        play_sound("drop")
 
     def clear_lines(self):
         """Clear completed lines and return number of lines cleared"""
@@ -156,7 +166,7 @@ class SinglePlayerGame:
 
         # Update score and level
         if lines_cleared > 0:
-            # pygame.mixer.Sound.play(self.clear_sound)
+            play_sound("clear")
             self.score += lines_cleared * lines_cleared * 100 * self.level
             self.lines_cleared += lines_cleared
             self.level = min(10, self.lines_cleared // 10 + 1)
@@ -196,7 +206,7 @@ class SinglePlayerGame:
         """Hard drop the piece to the bottom"""
         while self.move_down():
             pass
-        # pygame.mixer.Sound.play(self.drop_sound)
+        play_sound("drop")
 
     def update(self):
         """Update game state"""
@@ -240,13 +250,25 @@ class SinglePlayerGame:
                 self.move_time = pygame.time.get_ticks()
             elif event.key == pygame.K_UP:
                 self.rotate_piece()
-                # pygame.mixer.Sound.play(self.rotate_sound)
             elif event.key == pygame.K_SPACE:
                 self.drop_piece()
             elif event.key == pygame.K_p:
                 self.paused = not self.paused
             elif event.key == pygame.K_r and self.game_over:
                 self.__init__(self.controller)  # Reset game
+                play_music(volume=0.7)  # Restart music
+            # Volume controls
+            elif event.key in (pygame.K_PLUS, pygame.K_EQUALS):
+                current_volume = pygame.mixer.music.get_volume()
+                pygame.mixer.music.set_volume(min(1.0, current_volume + 0.1))
+            elif event.key in (pygame.K_MINUS, pygame.K_UNDERSCORE):
+                current_volume = pygame.mixer.music.get_volume()
+                pygame.mixer.music.set_volume(max(0.0, current_volume - 0.1))
+            elif event.key == pygame.K_m:
+                if pygame.mixer.music.get_volume() > 0:
+                    pygame.mixer.music.set_volume(0.0)
+                else:
+                    pygame.mixer.music.set_volume(0.7)
 
         elif event.type == pygame.KEYUP:
             if event.key == pygame.K_LEFT:
@@ -314,7 +336,6 @@ class SinglePlayerGame:
                 # Triangle (3) for rotate
                 if self.controller.get_button(3):
                     self.rotate_piece()
-                    # pygame.mixer.Sound.play(self.rotate_sound)
 
                 # X button (0) for hard drop
                 elif self.controller.get_button(0):
@@ -327,6 +348,7 @@ class SinglePlayerGame:
                 # Share button (8) for restart when game over
                 elif self.controller.get_button(8) and self.game_over:
                     self.__init__(self.controller)  # Reset game
+                    play_music(volume=0.7)  # Restart music
 
     def draw_grid(self, screen, offset_x, offset_y):
         """Draw the game grid and current piece"""
@@ -474,29 +496,32 @@ class SinglePlayerGame:
         controls_offset_y = grid_offset_y
 
         # Play background music
-        # pygame.mixer.music.play(-1)
+        play_music(volume=0.7)
 
         # Game loop
         running = True
         while running:
+            # Check if music should be playing
+            ensure_music_playing()
+            
             # Handle events
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                    # pygame.mixer.music.stop()
+                    stop_music()
                     return
 
                 # Listen for escape key to return to main menu
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     running = False
-                    # pygame.mixer.music.stop()
+                    stop_music()
                     return
 
                 # Controller back button to return to main menu
                 if self.controller and event.type == pygame.JOYBUTTONDOWN:
                     if self.controller.get_button(1):  # Circle button (1)
                         running = False
-                        # pygame.mixer.music.stop()
+                        stop_music()
                         return
 
                 # Handle game input
@@ -507,6 +532,10 @@ class SinglePlayerGame:
 
             # Clear screen
             screen.fill(GRAY)
+
+            # Draw volume controls info
+            volume_text = self.font_small.render("Volume: +/- (M to mute)", True, WHITE)
+            screen.blit(volume_text, (window_width // 2 - 100, window_height - 30))
 
             # Draw game elements
             self.draw_grid(screen, grid_offset_x, grid_offset_y)
