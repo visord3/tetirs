@@ -34,6 +34,11 @@ SHAPES = [
 
 COLORS = [CYAN, YELLOW, MAGENTA, GREEN, RED, BLUE, ORANGE]
 
+def get_random_block(cell_size):
+    """Generate a random tetromino shape"""
+    shape_index = random.randint(0, len(SHAPES) - 1)
+    return SHAPES[shape_index]
+
 # Game settings
 CELL_SIZE = 30
 GRID_WIDTH = 10

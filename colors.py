@@ -12,3 +12,13 @@ class Colors:
             (128, 0, 128),   # Block type 6 (purple)
             (0, 255, 255),   # Block type 7 (cyan)
         ]
+    
+    @staticmethod
+    def get_ui_colors():
+        # Colors for UI elements
+        return {
+            'title': (255, 255, 255),  # White for titles
+            'text': (255, 255, 255),   # White for regular text
+            'background': (0, 0, 0),   # Black for background
+            'border': (255, 255, 255)  # White for borders
+        }

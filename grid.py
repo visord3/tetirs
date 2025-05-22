@@ -23,8 +23,12 @@ class Grid:
         for row in range(self.num_rows):
             for col in range(self.num_cols):
                 cell_value = self.grid[row][col]
-                # For example, 0 = empty (black), so choose your color logic
-                color = (0, 0, 0) if cell_value == 0 else (255, 105, 180)
+                # Use colors from the Colors class
+                if cell_value == 0:
+                    color = self.colors[0]  # Empty cell color
+                else:
+                    color = self.colors[min(cell_value, len(self.colors) - 1)]
+                
                 cell_rect = pygame.Rect(
                     offset_x + col * self.cell_size,
                     offset_y + row * self.cell_size,

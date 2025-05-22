@@ -16,37 +16,27 @@ def load_game_sounds():
     
     # Initialize pygame mixer if not already initialized
     if not pygame.mixer.get_init():
-        pygame.mixer.init()
+        try:
+            pygame.mixer.init()
+        except pygame.error:
+            print("Could not initialize pygame mixer")
     
-    # Define sound file paths (assuming files are in a 'sounds' directory)
-    sounds_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds')
+    # Create dummy sounds if mixer is not available
+    class DummySound:
+        def play(self): pass
+        def stop(self): pass
+        def set_volume(self, vol): pass
     
-    # Create sounds directory if it doesn't exist
-    if not os.path.exists(sounds_dir):
-        os.makedirs(sounds_dir)
-        print(f"Created sounds directory at {sounds_dir}")
-        print("You'll need to add sound files to this directory.")
-    
-    # Dictionary mapping sound names to file paths
-    sound_files = {
-        "rotate": os.path.join(sounds_dir, "rotate.wav"),
-        "drop": os.path.join(sounds_dir, "drop.wav"),
-        "clear": os.path.join(sounds_dir, "clear.wav"),
-        "game_over": os.path.join(sounds_dir, "game_over.wav"),
-        "menu_select": os.path.join(sounds_dir, "menu_select.wav")
+    # Create all sounds as dummy sounds for now
+    sound_effects = {
+        "rotate": DummySound(),
+        "drop": DummySound(),
+        "clear": DummySound(),
+        "game_over": DummySound(),
+        "menu_select": DummySound()
     }
     
-    # Load each sound file if it exists, otherwise create placeholder
-    for name, filepath in sound_files.items():
-        if os.path.exists(filepath):
-            sound_effects[name] = pygame.mixer.Sound(filepath)
-            # Set default volume
-            if name in default_volumes:
-                sound_effects[name].set_volume(default_volumes[name])
-        else:
-            # Create a placeholder silent sound
-            sound_effects[name] = pygame.mixer.Sound(buffer=bytearray())
-            print(f"Sound file not found: {filepath}")
+    print("Loaded dummy sound effects")
 
 def play_sound(sound_name):
     """Play a sound effect by name"""
@@ -57,21 +47,15 @@ def play_sound(sound_name):
 
 def play_music(music_file="game_music.mp3", volume=0.5, loop=-1):
     """Start playing background music"""
-    if not pygame.mixer.get_init():
-        pygame.mixer.init()
-        
-    music_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds')
-    music_path = os.path.join(music_dir, music_file)
-    
     try:
-        if os.path.exists(music_path):
-            pygame.mixer.music.load(music_path)
-            pygame.mixer.music.set_volume(volume)
-            pygame.mixer.music.play(loop)
-        else:
-            print(f"Music file not found: {music_path}")
-    except pygame.error as e:
-        print(f"Error playing music: {e}")
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+    except pygame.error:
+        print("Could not initialize mixer for music")
+        return
+    
+    # For now, just print that music would be playing
+    print(f"Music would be playing: {music_file} at volume {volume}")
 
 def stop_music():
     """Stop currently playing music"""
@@ -80,5 +64,5 @@ def stop_music():
 
 def ensure_music_playing(volume=0.5):
     """Make sure music is playing; restart if stopped"""
-    if pygame.mixer.get_init() and not pygame.mixer.music.get_busy():
-        play_music(volume=volume)
+    # For now, just pass since we don't have actual music files
+    pass
